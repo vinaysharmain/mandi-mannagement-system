@@ -3,9 +3,75 @@ import { generateText, generateObject } from 'ai';
 import { z } from 'zod';
 
 // Configure Gemini with API key
-const geminiModel = google('gemini-1.5-flash-latest', {
-  apiKey: process.env.GEMINI_API_KEY,
-});
+const geminiModel = google('gemini-1.5-flash-latest');
+
+// Define interfaces for type safety
+interface BusinessContext {
+  inventory: {
+    totalItems: number;
+    lowStockItems: number;
+    expiringItems: number;
+    topSellingItems: string[];
+    categories: string[];
+  };
+  customers: {
+    totalCustomers: number;
+    activeCustomers: number;
+    topCustomers: string[];
+    creditCustomers: number;
+  };
+  sales: {
+    todaySales: number;
+    todayRevenue: number;
+    weeklyGrowth: number;
+    monthlyGrowth: number;
+  };
+  market: {
+    currentSeason: string;
+    upcomingFestivals: string[];
+    weatherImpact: string;
+    priceVolatility: string;
+  };
+}
+
+interface CustomerData {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  address: string;
+  totalOrders: number;
+  lastOrderDate?: string;
+  creditLimit: number;
+  outstandingAmount: number;
+  category: string;
+  purchaseHistory?: Array<{
+    date: string;
+    amount: number;
+    items: string[];
+  }>;
+}
+
+interface QueryContext {
+  currentTime?: string;
+  userQuery?: string;
+  [key: string]: unknown;
+}
+
+interface Insight {
+  type: 'alert' | 'recommendation' | 'insight';
+  title: string;
+  description: string;
+  confidence: number;
+  action: string;
+}
+
+interface Alert {
+  type: 'alert';
+  title: string;
+  priority: 'high' | 'medium' | 'low';
+  timestamp: string;
+}
 
 // Define the schema for intelligent search results
 const SearchResultSchema = z.object({
@@ -13,7 +79,7 @@ const SearchResultSchema = z.object({
     type: z.enum(['inventory', 'customer', 'sale', 'purchase', 'insight', 'action']),
     title: z.string(),
     description: z.string(),
-    data: z.any(),
+    data: z.record(z.unknown()),
     relevance: z.number(),
     action: z.string().optional()
   })),
@@ -22,7 +88,33 @@ const SearchResultSchema = z.object({
 });
 
 export class AIService {
-  private businessContext: any = {};
+  private businessContext: BusinessContext = {
+    inventory: {
+      totalItems: 0,
+      lowStockItems: 0,
+      expiringItems: 0,
+      topSellingItems: [],
+      categories: []
+    },
+    customers: {
+      totalCustomers: 0,
+      activeCustomers: 0,
+      topCustomers: [],
+      creditCustomers: 0
+    },
+    sales: {
+      todaySales: 0,
+      todayRevenue: 0,
+      weeklyGrowth: 0,
+      monthlyGrowth: 0
+    },
+    market: {
+      currentSeason: '',
+      upcomingFestivals: [],
+      weatherImpact: '',
+      priceVolatility: ''
+    }
+  };
 
   constructor() {
     this.updateBusinessContext();
@@ -140,7 +232,7 @@ export class AIService {
   }
 
   // Natural language query processing
-  async processNaturalQuery(query: string, context?: any) {
+  async processNaturalQuery(query: string, context?: QueryContext) {
     const enhancedContext = {
       ...this.businessContext,
       ...context,
@@ -197,7 +289,7 @@ export class AIService {
   }
 
   // Price optimization recommendations
-  async optimizePricing(itemName: string, currentPrice: number, context?: any) {
+  async optimizePricing(itemName: string, currentPrice: number, context?: QueryContext) {
     const pricingPrompt = `
     As a mandi pricing expert, analyze the optimal price for "${itemName}" 
     currently priced at ₹${currentPrice}.
@@ -263,7 +355,7 @@ export class AIService {
   }
 
   // Customer behavior analysis
-  async analyzeCustomerBehavior(customerData: any) {
+  async analyzeCustomerBehavior(customerData: CustomerData) {
     const analysisPrompt = `
     Analyze customer behavior patterns and provide insights.
     
@@ -297,12 +389,12 @@ export class AIService {
   }
 
   // Helper methods
-  private parseInsights(text: string) {
+  private parseInsights(text: string): Insight[] {
     // Parse the AI response into structured insights
     const lines = text.split('\n').filter(line => line.trim());
-    const insights = [];
+    const insights: Insight[] = [];
     
-    let currentInsight: any = null;
+    let currentInsight: Insight | null = null;
     
     for (const line of lines) {
       if (line.includes('Insight') || line.includes('Alert') || line.includes('Recommendation')) {
@@ -332,10 +424,10 @@ export class AIService {
     return insights;
   }
 
-  private parseAlerts(text: string) {
+  private parseAlerts(text: string): Alert[] {
     // Parse AI response into structured alerts
     const lines = text.split('\n').filter(line => line.trim());
-    const alerts = [];
+    const alerts: Alert[] = [];
     
     for (const line of lines) {
       if (line.includes('Alert') || line.includes('Warning') || line.includes('Action Required')) {
